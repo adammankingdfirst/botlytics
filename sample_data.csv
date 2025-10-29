@@ -1,0 +1,13 @@
+date,product,sales,region,category
+2024-01-01,Widget A,1200,North,Electronics
+2024-01-01,Widget B,800,South,Electronics
+2024-01-01,Gadget X,1500,East,Gadgets
+2024-01-02,Widget A,1100,North,Electronics
+2024-01-02,Widget B,900,South,Electronics
+2024-01-02,Gadget X,1600,East,Gadgets
+2024-01-03,Widget A,1300,North,Electronics
+2024-01-03,Widget B,750,South,Electronics
+2024-01-03,Gadget X,1400,East,Gadgets
+2024-01-04,Widget A,1250,North,Electronics
+2024-01-04,Widget B,850,South,Electronics
+2024-01-04,Gadget X,1550,East,Gadgets
