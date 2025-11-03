@@ -69,14 +69,19 @@ def main():
         print("🎉 All checks passed! Ready to run Botlytics.")
         print("\nNext steps:")
         print("1. Set up your .env file with GCP credentials")
-        print("2. Run: ./run-local.sh")
-        print("3. Open http://localhost:8080 for API")
-        print("4. Run Streamlit frontend separately")
+        print("2. Build: docker build -t botlytics -f .dockerfile .")
+        print("3. Run: docker run -p 8080:8080 --env-file .env botlytics")
+        print("4. Open http://localhost:8080 for API")
+        print("5. Frontend: cd frontend && streamlit run app.py")
+        print("\nAlternatively, run manually:")
+        print("cd backend && uvicorn main:app --host 0.0.0.0 --port 8080")
     else:
         print("⚠️  Some checks failed. Please install missing dependencies.")
         print("\nFor backend: pip install -r backend/requirements.txt")
         print("For frontend: pip install -r frontend/requirements.txt")
         print("For GCP: Install Google Cloud SDK")
+        print("\nOr use Docker (recommended):")
+        print("docker build -t botlytics -f .dockerfile .")
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: .dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCS_BUCKET=${GCS_BUCKET}
+      - GCP_LOCATION=${GCP_LOCATION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
+    volumes:
+      - ./service-account-key.json:/app/service-account-key.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../frontend.dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles:
+      - full-stack
+
+# Create frontend dockerfile
+---
+# Save as frontend.dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY frontend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy frontend code
+COPY frontend/ .
+
+# Expose port
+EXPOSE 8501
+
+# Run Streamlit
+CMD streamlit run app.py \
+    --server.port=8501 \
+    --server.address=0.0.0.0 \
+    --server.headless=true \
+    --server.enableCORS=false

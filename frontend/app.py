@@ -4,6 +4,7 @@ import pandas as pd
 import json
 from PIL import Image
 import io
+import uuid
 
 # Configuration
 API_BASE_URL = "http://localhost:8080"  # Update for production
@@ -22,6 +23,12 @@ if 'dataset_id' not in st.session_state:
     st.session_state.dataset_id = None
 if 'dataset_info' not in st.session_state:
     st.session_state.dataset_info = None
+if 'conversation_id' not in st.session_state:
+    st.session_state.conversation_id = None
+if 'conversation_history' not in st.session_state:
+    st.session_state.conversation_history = []
+if 'user_id' not in st.session_state:
+    st.session_state.user_id = str(uuid.uuid4())
 
 # Sidebar for file upload
 with st.sidebar:
@@ -87,78 +94,231 @@ if st.session_state.dataset_id:
             st.session_state.dataset_info = None
             st.rerun()
     
-    # Query interface
-    st.subheader("💬 Ask Questions About Your Data")
+    # Advanced Agent Interface
+    st.subheader("🤖 Advanced AI Agent")
     
-    # Example queries
-    with st.expander("💡 Example Queries"):
-        st.write("""
-        - "What are the total sales by product?"
-        - "Show me sales trends over time"
-        - "Which region has the highest sales?"
-        - "Create a chart showing sales by category"
-        - "What's the average sales per day?"
-        """)
+    # Conversation interface
+    tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🧠 Reasoning", "💻 Code", "📊 Analysis"])
     
-    # Query input
-    query = st.text_area(
-        "Enter your question:",
-        placeholder="e.g., What are the total sales by product?",
-        height=100
-    )
-    
-    if st.button("🚀 Analyze", type="primary"):
-        if query.strip():
-            with st.spinner("🤖 AI is analyzing your data..."):
+    with tab1:
+        st.write("**Multi-turn Conversation with Memory**")
+        
+        # Start conversation if not exists
+        if not st.session_state.conversation_id:
+            if st.button("🚀 Start New Conversation"):
                 try:
-                    payload = {
-                        "dataset_id": st.session_state.dataset_id,
-                        "query": query
-                    }
-                    
                     response = requests.post(
-                        f"{API_BASE_URL}/api/v1/query",
-                        json=payload,
-                        headers={"Content-Type": "application/json"}
+                        f"{API_BASE_URL}/api/v1/conversation/start",
+                        params={"user_id": st.session_state.user_id}
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        st.session_state.conversation_id = result["session_id"]
+                        st.session_state.conversation_history = [
+                            {"role": "assistant", "content": result["message"]}
+                        ]
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to start conversation: {e}")
+        
+        # Display conversation history
+        if st.session_state.conversation_history:
+            for msg in st.session_state.conversation_history:
+                if msg["role"] == "user":
+                    st.chat_message("user").write(msg["content"])
+                else:
+                    st.chat_message("assistant").write(msg["content"])
+        
+        # Chat input
+        if st.session_state.conversation_id:
+            user_input = st.chat_input("Ask me anything about your data...")
+            
+            if user_input:
+                # Add user message to history
+                st.session_state.conversation_history.append({"role": "user", "content": user_input})
+                
+                with st.spinner("🤖 Agent is thinking..."):
+                    try:
+                        payload = {
+                            "session_id": st.session_state.conversation_id,
+                            "message": user_input,
+                            "dataset_id": st.session_state.dataset_id
+                        }
+                        
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/conversation/continue",
+                            json=payload
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            # Add assistant response
+                            st.session_state.conversation_history.append({
+                                "role": "assistant", 
+                                "content": result["response"]
+                            })
+                            
+                            # Show tools used
+                            if result.get("tools_used"):
+                                st.info(f"🛠️ Tools used: {', '.join(result['tools_used'])}")
+                            
+                            st.rerun()
+                        else:
+                            st.error(f"Conversation failed: {response.text}")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+    
+    with tab2:
+        st.write("**Advanced Reasoning Chains**")
+        
+        problem = st.text_area(
+            "Describe a complex problem to solve:",
+            placeholder="e.g., Analyze sales performance, identify trends, and recommend strategies for improvement",
+            height=100
+        )
+        
+        if st.button("🧠 Execute Reasoning Chain"):
+            if problem.strip():
+                with st.spinner("🔗 Executing reasoning chain..."):
+                    try:
+                        payload = {
+                            "problem": problem,
+                            "dataset_id": st.session_state.dataset_id
+                        }
+                        
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/reasoning-chain",
+                            json=payload
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            st.success("✅ Reasoning chain completed!")
+                            
+                            # Show decomposition
+                            st.write("**Problem Decomposition:**")
+                            if result.get("decomposition", {}).get("steps"):
+                                for step in result["decomposition"]["steps"]:
+                                    st.write(f"**Step {step['step']}:** {step['description']}")
+                            
+                            # Show synthesis
+                            st.write("**Final Analysis:**")
+                            synthesis = result.get("synthesis", {})
+                            if isinstance(synthesis, dict) and "text" in synthesis:
+                                st.write(synthesis["text"])
+                            else:
+                                st.write(synthesis)
+                        else:
+                            st.error(f"Reasoning failed: {response.text}")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+    
+    with tab3:
+        st.write("**Code Interpreter**")
+        
+        code = st.text_area(
+            "Enter Python code to execute:",
+            placeholder="# Example: Analyze data with pandas\nresult = df.groupby('category')['sales'].sum()\nprint(result)",
+            height=150
+        )
+        
+        if st.button("💻 Execute Code"):
+            if code.strip():
+                with st.spinner("⚡ Executing code..."):
+                    try:
+                        payload = {
+                            "code": code,
+                            "dataset_id": st.session_state.dataset_id
+                        }
+                        
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/code-interpreter",
+                            json=payload
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            if result["success"]:
+                                st.success("✅ Code executed successfully!")
+                                
+                                if result.get("output"):
+                                    st.write("**Output:**")
+                                    st.code(result["output"])
+                                
+                                if result.get("variables"):
+                                    st.write("**Variables:**")
+                                    st.json(result["variables"])
+                            else:
+                                st.error(f"Execution failed: {result.get('error')}")
+                        else:
+                            st.error(f"Code execution failed: {response.text}")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+    
+    with tab4:
+        st.write("**Advanced Data Analysis**")
+        
+        analysis_type = st.selectbox(
+            "Select analysis type:",
+            ["comprehensive", "statistical", "trend", "correlation"]
+        )
+        
+        if st.button("📊 Run Advanced Analysis"):
+            with st.spinner("🔍 Performing advanced analysis..."):
+                try:
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/v1/data-analysis/advanced",
+                        params={
+                            "dataset_id": st.session_state.dataset_id,
+                            "analysis_type": analysis_type
+                        }
                     )
                     
                     if response.status_code == 200:
                         result = response.json()
                         
-                        # Display results
-                        st.subheader("📊 Analysis Results")
+                        st.success("✅ Analysis completed!")
                         
-                        # Summary
-                        st.write("**Summary:**")
-                        st.write(result['summary'])
+                        # Show basic analysis
+                        if result.get("basic_analysis"):
+                            st.write("**Dataset Overview:**")
+                            basic = result["basic_analysis"]
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Rows", basic["shape"][0])
+                                st.metric("Columns", basic["shape"][1])
+                            with col2:
+                                missing = sum(basic.get("missing_values", {}).values())
+                                st.metric("Missing Values", missing)
+                                st.metric("Memory Usage", f"{basic.get('memory_usage', 0):,} bytes")
                         
-                        # Results preview
-                        if result.get('preview'):
-                            st.write("**Data Results:**")
-                            if isinstance(result['preview'], list):
-                                df_result = pd.DataFrame(result['preview'])
-                                st.dataframe(df_result, use_container_width=True)
-                            else:
-                                st.write(result['preview'])
-                        
-                        # Chart
-                        if result.get('chart_url'):
-                            st.write("**Visualization:**")
-                            st.info("Chart generated and saved to cloud storage")
-                            st.write(f"Chart URL: {result['chart_url']}")
-                        
-                        # Code executed (for transparency)
-                        if result.get('code_executed'):
-                            with st.expander("🔍 Code Executed"):
-                                st.code(result['code_executed'], language='python')
-                        
+                        # Show recommendations
+                        if result.get("recommendations"):
+                            st.write("**Recommendations:**")
+                            for rec in result["recommendations"]:
+                                st.write(f"• {rec}")
                     else:
-                        st.error(f"Query failed: {response.text}")
-                        
+                        st.error(f"Analysis failed: {response.text}")
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
-        else:
-            st.warning("Please enter a question about your data.")
+                    st.error(f"Error: {e}")
+        
+        # Conversation summary
+        if st.session_state.conversation_id:
+            if st.button("📋 Get Conversation Summary"):
+                try:
+                    response = requests.get(
+                        f"{API_BASE_URL}/api/v1/conversation/{st.session_state.conversation_id}/summary"
+                    )
+                    if response.status_code == 200:
+                        summary = response.json()
+                        st.write("**Conversation Summary:**")
+                        st.json(summary)
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 else:
     # Welcome screen
