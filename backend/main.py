@@ -574,6 +574,23 @@ class CodeExecutionRequest(BaseModel):
     dataset_id: str = None
     context_vars: dict = None
 
+class TextToSpeechRequest(BaseModel):
+    text: str
+    language_code: str = "en-US"
+    voice_name: str = None
+    speaking_rate: float = 1.0
+    pitch: float = 0.0
+
+class SpeechToTextRequest(BaseModel):
+    audio_base64: str
+    language_code: str = "en-US"
+    enable_punctuation: bool = True
+
+class AudioDescriptionRequest(BaseModel):
+    chart_data: dict
+    chart_type: str
+    detail_level: str = "detailed"
+
 
 def build_prompt_for_bigquery(table_schema: dict, user_query: str) -> str:
     """Build prompt for BigQuery SQL generation"""
@@ -1060,6 +1077,102 @@ async def get_conversation_summary(session_id: str):
     except Exception as e:
         logger.error(f"Summary error: {e}")
         raise HTTPException(500, f"Failed to get summary: {str(e)}")
+
+@app.post("/api/v1/accessibility/text-to-speech")
+@monitor_endpoint
+async def text_to_speech_endpoint(body: TextToSpeechRequest):
+    """Convert text to speech for accessibility"""
+    if not advanced_agent:
+        raise HTTPException(500, "Advanced Agent not initialized")
+    
+    try:
+        result = advanced_agent.accessibility_tools.text_to_speech(
+            text=body.text,
+            language_code=body.language_code,
+            voice_name=body.voice_name,
+            speaking_rate=body.speaking_rate,
+            pitch=body.pitch
+        )
+        
+        return {
+            "success": result.get("success", False),
+            "audio_base64": result.get("audio_base64"),
+            "audio_format": result.get("audio_format", "mp3"),
+            "duration_estimate": result.get("duration_estimate", 0),
+            "accessibility_features": result.get("accessibility_features", {}),
+            "error": result.get("error")
+        }
+        
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        raise HTTPException(500, f"Text-to-speech failed: {str(e)}")
+
+@app.post("/api/v1/accessibility/speech-to-text")
+@monitor_endpoint
+async def speech_to_text_endpoint(body: SpeechToTextRequest):
+    """Convert speech to text for accessibility"""
+    if not advanced_agent:
+        raise HTTPException(500, "Advanced Agent not initialized")
+    
+    try:
+        result = advanced_agent.accessibility_tools.speech_to_text(
+            audio_base64=body.audio_base64,
+            language_code=body.language_code,
+            enable_automatic_punctuation=body.enable_punctuation
+        )
+        
+        return {
+            "success": result.get("success", False),
+            "transcript": result.get("transcript", ""),
+            "confidence": result.get("confidence", 0.0),
+            "word_info": result.get("word_info", []),
+            "accessibility_features": result.get("accessibility_features", {}),
+            "error": result.get("error")
+        }
+        
+    except Exception as e:
+        logger.error(f"STT error: {e}")
+        raise HTTPException(500, f"Speech-to-text failed: {str(e)}")
+
+@app.post("/api/v1/accessibility/audio-description")
+@monitor_endpoint
+async def audio_description_endpoint(body: AudioDescriptionRequest):
+    """Generate audio descriptions for charts and visualizations"""
+    if not advanced_agent:
+        raise HTTPException(500, "Advanced Agent not initialized")
+    
+    try:
+        # Generate text description
+        description = advanced_agent.accessibility_tools.generate_audio_description(
+            chart_data=body.chart_data,
+            chart_type=body.chart_type
+        )
+        
+        # Generate accessible summaries
+        summaries = advanced_agent.accessibility_tools.create_accessible_summary(body.chart_data)
+        
+        # Generate TTS for the description
+        tts_result = None
+        if body.detail_level != "text_only":
+            tts_result = advanced_agent.accessibility_tools.text_to_speech(description)
+        
+        return {
+            "success": True,
+            "description": description,
+            "summaries": summaries,
+            "audio_description": tts_result,
+            "chart_type": body.chart_type,
+            "accessibility_features": {
+                "screen_reader_optimized": True,
+                "audio_available": tts_result is not None,
+                "multiple_formats": True,
+                "detailed_description": len(description) > 100
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Audio description error: {e}")
+        raise HTTPException(500, f"Audio description failed: {str(e)}")
 
 @app.get("/metrics")
 async def metrics():

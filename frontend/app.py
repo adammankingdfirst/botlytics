@@ -5,6 +5,9 @@ import json
 from PIL import Image
 import io
 import uuid
+import base64
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+import av
 
 # Configuration
 API_BASE_URL = "http://localhost:8080"  # Update for production
@@ -97,8 +100,48 @@ if st.session_state.dataset_id:
     # Advanced Agent Interface
     st.subheader("🤖 Advanced AI Agent")
     
+    # Accessibility settings in sidebar
+    with st.sidebar:
+        st.header("♿ Accessibility")
+        
+        # Text-to-speech settings
+        enable_tts = st.checkbox("🔊 Enable Text-to-Speech", value=False)
+        if enable_tts:
+            tts_language = st.selectbox("TTS Language", ["en-US", "es-ES", "fr-FR", "de-DE"], index=0)
+            tts_rate = st.slider("Speaking Rate", 0.5, 2.0, 1.0, 0.1)
+            tts_pitch = st.slider("Voice Pitch", -10.0, 10.0, 0.0, 1.0)
+        
+        # Voice input settings
+        enable_voice = st.checkbox("🎤 Enable Voice Input", value=False)
+        if enable_voice:
+            voice_language = st.selectbox("Voice Language", ["en-US", "es-ES", "fr-FR", "de-DE"], index=0)
+        
+        # Visual accessibility
+        high_contrast = st.checkbox("🔲 High Contrast Mode", value=False)
+        large_text = st.checkbox("🔍 Large Text", value=False)
+        
+        # Audio descriptions
+        enable_audio_desc = st.checkbox("📢 Audio Descriptions for Charts", value=False)
+    
+    # Apply accessibility styles
+    if high_contrast:
+        st.markdown("""
+        <style>
+        .stApp { background-color: #000000; color: #FFFFFF; }
+        .stButton > button { background-color: #FFFFFF; color: #000000; border: 2px solid #FFFFFF; }
+        </style>
+        """, unsafe_allow_html=True)
+    
+    if large_text:
+        st.markdown("""
+        <style>
+        .stApp { font-size: 18px; }
+        .stMarkdown { font-size: 18px; }
+        </style>
+        """, unsafe_allow_html=True)
+    
     # Conversation interface
-    tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🧠 Reasoning", "💻 Code", "📊 Analysis"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 Chat", "🧠 Reasoning", "💻 Code", "📊 Analysis", "♿ Accessibility"])
     
     with tab1:
         st.write("**Multi-turn Conversation with Memory**")
@@ -129,6 +172,20 @@ if st.session_state.dataset_id:
                 else:
                     st.chat_message("assistant").write(msg["content"])
         
+        # Voice input option
+        if enable_voice and st.session_state.conversation_id:
+            st.write("🎤 **Voice Input**")
+            
+            # Simple voice input button (placeholder - would need WebRTC implementation)
+            if st.button("🎤 Start Voice Input"):
+                st.info("Voice input feature would be implemented with WebRTC for real-time audio capture")
+                # Placeholder for voice input implementation
+                # In a real implementation, this would:
+                # 1. Capture audio using WebRTC
+                # 2. Convert to base64
+                # 3. Send to speech-to-text API
+                # 4. Process the transcribed text
+        
         # Chat input
         if st.session_state.conversation_id:
             user_input = st.chat_input("Ask me anything about your data...")
@@ -153,11 +210,38 @@ if st.session_state.dataset_id:
                         if response.status_code == 200:
                             result = response.json()
                             
+                            assistant_response = result["response"]
+                            
                             # Add assistant response
                             st.session_state.conversation_history.append({
                                 "role": "assistant", 
-                                "content": result["response"]
+                                "content": assistant_response
                             })
+                            
+                            # Text-to-speech for assistant response
+                            if enable_tts:
+                                try:
+                                    tts_payload = {
+                                        "text": assistant_response,
+                                        "language_code": tts_language,
+                                        "speaking_rate": tts_rate,
+                                        "pitch": tts_pitch
+                                    }
+                                    
+                                    tts_response = requests.post(
+                                        f"{API_BASE_URL}/api/v1/accessibility/text-to-speech",
+                                        json=tts_payload
+                                    )
+                                    
+                                    if tts_response.status_code == 200:
+                                        tts_result = tts_response.json()
+                                        if tts_result.get("success") and tts_result.get("audio_base64"):
+                                            # Display audio player
+                                            audio_bytes = base64.b64decode(tts_result["audio_base64"])
+                                            st.audio(audio_bytes, format="audio/mp3")
+                                            st.caption("🔊 Audio response generated")
+                                except Exception as e:
+                                    st.warning(f"TTS failed: {e}")
                             
                             # Show tools used
                             if result.get("tools_used"):
@@ -319,6 +403,163 @@ if st.session_state.dataset_id:
                         st.json(summary)
                 except Exception as e:
                     st.error(f"Error: {e}")
+    
+    with tab5:
+        st.write("**♿ Accessibility Features**")
+        
+        # Text-to-Speech Testing
+        st.subheader("🔊 Text-to-Speech")
+        
+        tts_text = st.text_area(
+            "Enter text to convert to speech:",
+            placeholder="Type any text here to test text-to-speech functionality...",
+            height=100
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            tts_lang = st.selectbox("Language", ["en-US", "es-ES", "fr-FR", "de-DE", "ja-JP"], key="tts_lang")
+            tts_speed = st.slider("Speaking Rate", 0.5, 2.0, 1.0, 0.1, key="tts_speed")
+        with col2:
+            tts_voice_pitch = st.slider("Voice Pitch", -10.0, 10.0, 0.0, 1.0, key="tts_pitch")
+        
+        if st.button("🔊 Generate Speech") and tts_text.strip():
+            with st.spinner("Generating speech..."):
+                try:
+                    payload = {
+                        "text": tts_text,
+                        "language_code": tts_lang,
+                        "speaking_rate": tts_speed,
+                        "pitch": tts_voice_pitch
+                    }
+                    
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/v1/accessibility/text-to-speech",
+                        json=payload
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get("success"):
+                            audio_bytes = base64.b64decode(result["audio_base64"])
+                            st.audio(audio_bytes, format="audio/mp3")
+                            
+                            st.success("✅ Speech generated successfully!")
+                            st.write(f"**Duration:** ~{result.get('duration_estimate', 0):.1f} seconds")
+                            st.write(f"**Format:** {result.get('audio_format', 'mp3')}")
+                        else:
+                            st.error(f"TTS failed: {result.get('error')}")
+                    else:
+                        st.error(f"Request failed: {response.text}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        
+        # Audio Description Testing
+        st.subheader("📢 Audio Descriptions")
+        
+        st.write("Test audio descriptions for data visualizations:")
+        
+        # Sample chart data for testing
+        sample_chart_data = {
+            "title": "Sales by Product",
+            "x_label": "Product",
+            "y_label": "Sales ($)",
+            "data_points": [
+                {"x": "Product A", "y": 15000},
+                {"x": "Product B", "y": 23000},
+                {"x": "Product C", "y": 18000}
+            ]
+        }
+        
+        chart_type_desc = st.selectbox(
+            "Chart Type", 
+            ["bar", "line", "scatter", "pie"],
+            key="chart_type_desc"
+        )
+        
+        if st.button("📢 Generate Audio Description"):
+            with st.spinner("Generating audio description..."):
+                try:
+                    payload = {
+                        "chart_data": sample_chart_data,
+                        "chart_type": chart_type_desc,
+                        "detail_level": "detailed"
+                    }
+                    
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/v1/accessibility/audio-description",
+                        json=payload
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        
+                        st.success("✅ Audio description generated!")
+                        
+                        # Show text description
+                        st.write("**Text Description:**")
+                        st.write(result["description"])
+                        
+                        # Show different summary formats
+                        if result.get("summaries"):
+                            st.write("**Accessible Summaries:**")
+                            
+                            summaries = result["summaries"]
+                            
+                            with st.expander("Screen Reader Optimized"):
+                                st.write(summaries.get("screen_reader", ""))
+                            
+                            with st.expander("Simple Language"):
+                                st.write(summaries.get("simple_language", ""))
+                            
+                            with st.expander("Technical Summary"):
+                                st.write(summaries.get("technical", ""))
+                        
+                        # Play audio description
+                        if result.get("audio_description") and result["audio_description"].get("success"):
+                            st.write("**Audio Description:**")
+                            audio_data = result["audio_description"]["audio_base64"]
+                            audio_bytes = base64.b64decode(audio_data)
+                            st.audio(audio_bytes, format="audio/mp3")
+                        
+                    else:
+                        st.error(f"Request failed: {response.text}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        
+        # Accessibility Guidelines
+        st.subheader("ℹ️ Accessibility Information")
+        
+        st.info("""
+        **Available Accessibility Features:**
+        
+        🔊 **Text-to-Speech**: Convert any text response to natural-sounding speech
+        
+        🎤 **Voice Input**: Use voice commands to interact with the agent (coming soon)
+        
+        📢 **Audio Descriptions**: Detailed audio descriptions of charts and visualizations
+        
+        🔲 **High Contrast Mode**: Enhanced visual contrast for better readability
+        
+        🔍 **Large Text**: Increased font sizes for better visibility
+        
+        📱 **Screen Reader Support**: Optimized content structure for screen readers
+        
+        🌐 **Multi-language Support**: TTS and STT in multiple languages
+        """)
+        
+        # Keyboard shortcuts
+        with st.expander("⌨️ Keyboard Shortcuts"):
+            st.write("""
+            - **Tab**: Navigate between elements
+            - **Enter**: Activate buttons and submit forms
+            - **Space**: Toggle checkboxes and buttons
+            - **Arrow Keys**: Navigate within components
+            - **Escape**: Close modals and dropdowns
+            """)
+        
+        # Contact for accessibility support
+        st.write("**Need accessibility support?** Contact our team for additional assistance.")
 
 else:
     # Welcome screen

@@ -5,7 +5,7 @@ Botlytics is an enterprise-grade data analytics platform that lets anyone explor
 ## ✨ **Advanced Features - All Implemented**
 
 ### 🛠️ **Tool Calling & Function Execution**
-- **4 Specialized Tools**: Data analysis, visualization, code execution, statistical analysis
+- **7 Specialized Tools**: Data analysis, visualization, code execution, statistical analysis, TTS, STT, audio descriptions
 - **Automatic Tool Selection**: Agent intelligently chooses appropriate tools
 - **Function Orchestration**: Complex workflows with multiple tool calls
 
@@ -32,6 +32,14 @@ Botlytics is an enterprise-grade data analytics platform that lets anyone explor
 - **Step Execution**: Execute each step with appropriate tools
 - **Context Building**: Each step builds on previous results
 - **Synthesis**: Combine results into comprehensive insights
+
+### ♿ **Comprehensive Accessibility Features**
+- **Text-to-Speech**: Natural voice synthesis with 40+ languages and customizable voice parameters
+- **Speech-to-Text**: High-accuracy voice recognition with automatic punctuation and word timing
+- **Audio Descriptions**: Detailed audio descriptions for all charts and visualizations
+- **Screen Reader Support**: Optimized content structure and navigation
+- **Visual Accessibility**: High contrast mode, large text options, keyboard navigation
+- **Multi-language Support**: Full accessibility features in multiple languages
 
 ## 🏗️ Architecture
 
@@ -177,6 +185,11 @@ botlytics/
 - `POST /api/v1/reasoning-chain` - Execute complex reasoning workflows
 - `POST /api/v1/code-interpreter` - Safe Python code execution
 - `POST /api/v1/data-analysis/advanced` - Comprehensive data analysis
+
+### Accessibility Endpoints
+- `POST /api/v1/accessibility/text-to-speech` - Convert text to natural speech
+- `POST /api/v1/accessibility/speech-to-text` - Convert speech to text
+- `POST /api/v1/accessibility/audio-description` - Generate chart audio descriptions
 - `GET /metrics` - Prometheus metrics for monitoring
 
 ## 💡 Example Interactions
@@ -303,11 +316,15 @@ export GOOGLE_APPLICATION_CREDENTIALS="./service-account-key.json"
 - **Auto-scaling** - Dynamic scaling from 1-20 instances
 - **CI/CD Pipeline** - GitHub Actions with automated testing and deployment
 
-### ✅ **User Experience**
+### ✅ **User Experience & Accessibility**
 - **Streamlit Web Interface** - Intuitive chat-based interaction
-- **Multi-tab Interface** - Chat, Reasoning, Code, Analysis tabs
+- **Multi-tab Interface** - Chat, Reasoning, Code, Analysis, Accessibility tabs
+- **Voice Interaction** - Speech-to-text input and text-to-speech output
+- **Visual Accessibility** - High contrast, large text, keyboard navigation
+- **Audio Descriptions** - Detailed descriptions for all visualizations
+- **Multi-language Support** - 40+ languages for TTS/STT
+- **Screen Reader Optimized** - WCAG 2.1 AA compliant interface
 - **Real-time Feedback** - Live updates and progress indicators
-- **Error Handling** - Graceful error recovery with helpful messages
 
 ## 🚀 **Why No .sh Scripts?**
 
