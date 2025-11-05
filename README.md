@@ -77,6 +77,45 @@ Botlytics is an enterprise-grade data analytics platform that lets anyone explor
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## 🏗️ **Cloud Run Integration Architecture**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    GOOGLE CLOUD RUN DEPLOYMENT              │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────────┐      ┌─────────────────────┐       │
+│  │   Streamlit         │ HTTP │   FastAPI Backend   │       │
+│  │   Frontend          │ ───► │   (Advanced Agent)  │       │
+│  │   (Cloud Run)       │      │   (Cloud Run)       │       │
+│  │   botlytics-frontend│      │   botlytics-backend │       │
+│  └─────────────────────┘      └─────────────────────┘       │
+│           │                            │                    │
+│           │                            ▼                    │
+│           │                   ┌─────────────────────┐       │
+│           │                   │   Google Cloud      │       │
+│           │                   │   Services          │       │
+│           │                   │   • Vertex AI       │       │
+│           │                   │   • Cloud Storage   │       │
+│           │                   │   • TTS/STT APIs    │       │
+│           │                   │   • BigQuery        │       │
+│           │                   │   • Monitoring      │       │
+│           │                   └─────────────────────┘       │
+│           │                                                 │
+│           ▼                                                 │
+│  ┌─────────────────────┐                                    │
+│  │      Users          │                                    │
+│  │   (Web Browser)     │                                    │
+│  └─────────────────────┘                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### **Integration Flow:**
+1. **User** accesses Streamlit frontend via Cloud Run URL
+2. **Frontend** makes HTTP requests to FastAPI backend via Cloud Run URL
+3. **Backend** processes requests using Advanced Agent with Google Cloud services
+4. **Response** flows back through the same path with results, audio, and visualizations
+
 ## 🚀 Quick Start
 
 ### 1. GCP Setup (One-time)
@@ -133,23 +172,40 @@ streamlit run app.py --server.port 8501
 
 ### 3. Deploy to Cloud Run
 
+#### Option A: Deploy Full Stack (Recommended)
 ```bash
 # Authenticate and set project
 gcloud auth login
 gcloud config set project $PROJECT_ID
 
-# Build and deploy with Docker
-docker build -t gcr.io/$PROJECT_ID/botlytics -f .dockerfile .
-docker push gcr.io/$PROJECT_ID/botlytics
+# Deploy both backend and frontend
+chmod +x deploy-full-stack.sh
+./deploy-full-stack.sh
+```
 
-gcloud run deploy botlytics \
-  --image gcr.io/$PROJECT_ID/botlytics \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,GCS_BUCKET=$BUCKET_NAME" \
-  --service-account="botlytics-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --memory=2Gi --cpu=2 --timeout=300
+#### Option B: Deploy Services Separately
+```bash
+# Deploy backend first
+chmod +x deploy-backend.sh
+./deploy-backend.sh
+
+# Get backend URL and deploy frontend
+export BACKEND_URL="https://botlytics-backend-[hash]-uc.a.run.app"
+chmod +x deploy-frontend.sh
+./deploy-frontend.sh
+```
+
+#### Option C: Manual Docker Deployment
+```bash
+# Backend
+docker build -t gcr.io/$PROJECT_ID/botlytics-backend -f .dockerfile .
+docker push gcr.io/$PROJECT_ID/botlytics-backend
+gcloud run deploy botlytics-backend --image gcr.io/$PROJECT_ID/botlytics-backend --region us-central1
+
+# Frontend
+docker build -t gcr.io/$PROJECT_ID/botlytics-frontend -f frontend.dockerfile .
+docker push gcr.io/$PROJECT_ID/botlytics-frontend
+gcloud run deploy botlytics-frontend --image gcr.io/$PROJECT_ID/botlytics-frontend --set-env-vars="API_BASE_URL=https://botlytics-backend-[hash]-uc.a.run.app" --region us-central1
 ```
 
 ## 📁 Project Structure

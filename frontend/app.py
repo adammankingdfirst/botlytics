@@ -6,11 +6,12 @@ from PIL import Image
 import io
 import uuid
 import base64
+import os
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
 
-# Configuration
-API_BASE_URL = "http://localhost:8080"  # Update for production
+# Configuration - Dynamic API URL for Cloud Run deployment
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 
 st.set_page_config(
     page_title="Botlytics - Data Analytics with AI",

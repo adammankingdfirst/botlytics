@@ -55,10 +55,12 @@ jobs:
         pip install safety
         safety check -r backend/requirements.txt || echo "Security scan completed"
 
-  deploy:
+  deploy-backend:
     needs: [test, security-scan]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      backend-url: ${{ steps.backend-deploy.outputs.url }}
     
     steps:
     - uses: actions/checkout@v4
@@ -72,17 +74,18 @@ jobs:
     - name: Configure Docker
       run: gcloud auth configure-docker
     
-    - name: Build and Push Docker image
+    - name: Build and Push Backend Image
       run: |
-        IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA"
-        docker build -t $IMAGE_NAME -f .dockerfile .
-        docker push $IMAGE_NAME
-        echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        BACKEND_IMAGE="gcr.io/$PROJECT_ID/botlytics-backend:$GITHUB_SHA"
+        docker build -t $BACKEND_IMAGE -f .dockerfile .
+        docker push $BACKEND_IMAGE
+        echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> $GITHUB_ENV
     
-    - name: Deploy to Cloud Run
+    - name: Deploy Backend to Cloud Run
+      id: backend-deploy
       run: |
-        gcloud run deploy $SERVICE_NAME \
-          --image $IMAGE_NAME \
+        gcloud run deploy botlytics-backend \
+          --image $BACKEND_IMAGE \
           --platform managed \
           --region $REGION \
           --allow-unauthenticated \
@@ -96,21 +99,75 @@ jobs:
           --concurrency=80 \
           --execution-environment=gen2 \
           --cpu-boost
+        
+        BACKEND_URL=$(gcloud run services describe botlytics-backend --region=$REGION --format='value(status.url)')
+        echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
+        echo "BACKEND_URL=$BACKEND_URL" >> $GITHUB_ENV
     
-    - name: Get Service URL
-      run: |
-        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region=$REGION --format='value(status.url)')
-        echo "Service deployed at: $SERVICE_URL"
-        echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_ENV
-    
-    - name: Health Check
+    - name: Backend Health Check
       run: |
         sleep 30  # Wait for service to be ready
-        curl -f $SERVICE_URL/api/v1/health || exit 1
-        echo "✅ Health check passed"
+        curl -f $BACKEND_URL/api/v1/health || exit 1
+        echo "✅ Backend health check passed"
+
+  deploy-frontend:
+    needs: [deploy-backend]
+    runs-on: ubuntu-latest
     
-    - name: Update deployment status
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+    
+    - name: Configure Docker
+      run: gcloud auth configure-docker
+    
+    - name: Build and Push Frontend Image
       run: |
-        echo "🚀 Deployment successful!"
-        echo "📊 Service URL: $SERVICE_URL"
-        echo "🔍 Health check: $SERVICE_URL/api/v1/health"
+        FRONTEND_IMAGE="gcr.io/$PROJECT_ID/botlytics-frontend:$GITHUB_SHA"
+        docker build -t $FRONTEND_IMAGE -f frontend.dockerfile .
+        docker push $FRONTEND_IMAGE
+        echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> $GITHUB_ENV
+    
+    - name: Deploy Frontend to Cloud Run
+      run: |
+        BACKEND_URL="${{ needs.deploy-backend.outputs.backend-url }}"
+        
+        gcloud run deploy botlytics-frontend \
+          --image $FRONTEND_IMAGE \
+          --platform managed \
+          --region $REGION \
+          --allow-unauthenticated \
+          --set-env-vars="API_BASE_URL=$BACKEND_URL" \
+          --memory=1Gi \
+          --cpu=1 \
+          --timeout=300 \
+          --max-instances=10 \
+          --min-instances=0 \
+          --concurrency=50 \
+          --execution-environment=gen2
+        
+        FRONTEND_URL=$(gcloud run services describe botlytics-frontend --region=$REGION --format='value(status.url)')
+        echo "FRONTEND_URL=$FRONTEND_URL" >> $GITHUB_ENV
+    
+    - name: Frontend Health Check
+      run: |
+        sleep 30  # Wait for service to be ready
+        curl -f $FRONTEND_URL/_stcore/health || exit 1
+        echo "✅ Frontend health check passed"
+    
+    - name: Deployment Summary
+      run: |
+        BACKEND_URL="${{ needs.deploy-backend.outputs.backend-url }}"
+        echo "🎉 FULL STACK DEPLOYMENT COMPLETE!"
+        echo "=================================="
+        echo "🔗 Backend API: $BACKEND_URL"
+        echo "🎨 Frontend App: $FRONTEND_URL"
+        echo "📊 API Docs: $BACKEND_URL/docs"
+        echo "🔍 Health Check: $BACKEND_URL/api/v1/health"
+        echo ""
+        echo "🧪 Test the complete application at: $FRONTEND_URL"
