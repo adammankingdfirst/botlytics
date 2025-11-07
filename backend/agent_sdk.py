@@ -622,11 +622,20 @@ class CodeInterpreter:
         import ast
         import sys
         from io import StringIO
+        
+        # Validate code length
+        if len(code) > 10000:
+            return {"success": False, "error": "Code too long (max 10000 characters)"}
+        
+        if not code.strip():
+            return {"success": False, "error": "Empty code provided"}
 
         # Validate code safety
         try:
             tree = ast.parse(code)
             self._validate_ast(tree)
+        except SyntaxError as e:
+            return {"success": False, "error": f"Syntax error: {e}"}
         except Exception as e:
             return {"success": False, "error": f"Code validation failed: {e}"}
 
@@ -715,21 +724,27 @@ class CodeInterpreter:
 
     def _validate_ast(self, tree):
         """Validate AST for dangerous operations"""
-        dangerous_nodes = [
-            ast.Import,
-            ast.ImportFrom,
-            ast.Exec,
-            ast.Eval,
-            ast.Call,  # We'll check call names separately
-        ]
-
+        # Check for imports (not allowed)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                raise ValueError("Import statements not allowed in code execution")
+        
+        # Check for dangerous function calls
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name):
-                    if node.func.id in ["exec", "eval", "compile", "__import__"]:
+                    dangerous_funcs = [
+                        "exec", "eval", "compile", "__import__", 
+                        "open", "input", "breakpoint", "exit", "quit"
+                    ]
+                    if node.func.id in dangerous_funcs:
                         raise ValueError(f"Dangerous function call: {node.func.id}")
                 elif isinstance(node.func, ast.Attribute):
-                    if node.func.attr in ["system", "popen", "subprocess"]:
+                    dangerous_methods = [
+                        "system", "popen", "subprocess", "execfile",
+                        "read_csv", "to_csv", "to_sql", "read_sql"
+                    ]
+                    if node.func.attr in dangerous_methods:
                         raise ValueError(f"Dangerous method call: {node.func.attr}")
 
 

@@ -288,27 +288,39 @@ def sanitize_pandas_code(code: str, allowed_columns: list) -> str:
 @monitor_code_execution("pandas")
 def run_pandas_code_safe(df: pd.DataFrame, code: str) -> dict:
     """Execute pandas code safely with resource limits and timeout"""
-    import signal
-    import resource
     import sys
     from contextlib import contextmanager
-
+    import threading
+    
+    # Cross-platform timeout implementation
+    class TimeoutException(Exception):
+        pass
+    
     @contextmanager
     def timeout_context(seconds):
-        def timeout_handler(signum, frame):
-            raise TimeoutError(f"Code execution timed out after {seconds} seconds")
-
-        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(seconds)
+        """Cross-platform timeout context manager"""
+        timer = None
+        
+        def timeout_handler():
+            raise TimeoutException(f"Code execution timed out after {seconds} seconds")
+        
         try:
+            timer = threading.Timer(seconds, timeout_handler)
+            timer.start()
             yield
         finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+            if timer:
+                timer.cancel()
 
     try:
-        # Set memory limit (100MB)
-        resource.setrlimit(resource.RLIMIT_AS, (100 * 1024 * 1024, 100 * 1024 * 1024))
+        # Note: Memory limits via resource module only work on Unix
+        # For Windows/Cloud Run, rely on container limits
+        try:
+            import resource
+            resource.setrlimit(resource.RLIMIT_AS, (100 * 1024 * 1024, 100 * 1024 * 1024))
+        except (ImportError, AttributeError, ValueError):
+            # Windows or resource limits not available - rely on container limits
+            logger.warning("Resource limits not available on this platform, using container limits")
 
         # Create restricted execution environment
         safe_builtins = {
@@ -345,8 +357,11 @@ def run_pandas_code_safe(df: pd.DataFrame, code: str) -> dict:
         local_vars = {}
 
         # Execute with timeout (30 seconds max)
-        with timeout_context(30):
-            exec(code, safe_globals, local_vars)
+        try:
+            with timeout_context(30):
+                exec(code, safe_globals, local_vars)
+        except TimeoutException as e:
+            raise TimeoutError(str(e))
 
         # Get the result
         result = local_vars.get("result")
@@ -399,13 +414,14 @@ def run_pandas_code_safe(df: pd.DataFrame, code: str) -> dict:
         logger.error(f"Code execution error: {e}")
         return {"success": False, "error": str(e), "preview": "Error executing code"}
     finally:
-        # Reset resource limits
+        # Reset resource limits (Unix only)
         try:
+            import resource
             resource.setrlimit(
                 resource.RLIMIT_AS, (resource.RLIM_INFINITY, resource.RLIM_INFINITY)
             )
-        except:
-            pass
+        except (ImportError, AttributeError, ValueError):
+            pass  # Not available on Windows/some platforms
 
 
 def create_chart_and_upload(data, chart_spec: dict, dataset_id: str) -> str:
@@ -464,8 +480,13 @@ async def root():
 
 @app.get("/api/v1/health")
 async def health_check():
-    """Comprehensive health check"""
-    health_status = {"status": "healthy", "checks": {}}
+    """Comprehensive health check for Cloud Run"""
+    health_status = {
+        "status": "healthy", 
+        "checks": {},
+        "version": "1.0.0",
+        "environment": "production" if GCP_PROJECT_ID else "development"
+    }
 
     # Check GCS connectivity
     try:
@@ -503,6 +524,24 @@ async def health_check():
     except Exception as e:
         health_status["checks"]["bigquery"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
+    
+    # Check Advanced Agent
+    try:
+        if advanced_agent:
+            health_status["checks"]["advanced_agent"] = "ok"
+            health_status["checks"]["agent_features"] = {
+                "conversation_memory": True,
+                "tool_calling": True,
+                "code_interpreter": True,
+                "reasoning_chains": True,
+                "accessibility": True
+            }
+        else:
+            health_status["checks"]["advanced_agent"] = "not_initialized"
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["checks"]["advanced_agent"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"
 
     return health_status
 
@@ -518,17 +557,38 @@ async def metrics():
 @app.post("/api/v1/upload")
 @monitor_endpoint
 async def upload(file: UploadFile = File(...)):
-    """Upload CSV file and return dataset_id"""
+    """Upload CSV file and return dataset_id with validation"""
     try:
+        # Validate file size (max 50MB for Cloud Run)
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+        
         dataset_id = str(uuid.uuid4())
         filename = f"{dataset_id}.csv"
         contents = await file.read()
+        
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(400, f"File too large. Maximum size is 50MB")
+        
+        if len(contents) == 0:
+            raise HTTPException(400, "Empty file uploaded")
 
         # Validate CSV
         try:
             df = pd.read_csv(io.BytesIO(contents))
             if df.empty:
                 raise HTTPException(400, "CSV file is empty")
+            
+            # Validate reasonable size for processing
+            if len(df) > 1000000:  # 1M rows
+                raise HTTPException(400, "Dataset too large. Maximum 1 million rows")
+            
+            if len(df.columns) > 1000:
+                raise HTTPException(400, "Too many columns. Maximum 1000 columns")
+                
+        except pd.errors.EmptyDataError:
+            raise HTTPException(400, "CSV file is empty or invalid")
+        except pd.errors.ParserError as e:
+            raise HTTPException(400, f"CSV parsing error: {str(e)}")
         except Exception as e:
             raise HTTPException(400, f"Invalid CSV file: {str(e)}")
 
